@@ -1,0 +1,203 @@
+package com.example.carrental
+
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.os.Parcelable
+import android.util.AttributeSet
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.carrental.databinding.ActivityCarDetailBinding
+import com.example.carrental.databinding.ActivityMainBinding
+import com.example.carrental.databinding.FragmentCarListBinding
+import com.example.carrental.databinding.ItemCarBinding
+import com.example.carrental.databinding.ViewInsuranceOptionBinding
+import kotlinx.parcelize.Parcelize
+
+// ==========================================
+// 1. MODELO DE DADOS E MOCK (data class)
+// ==========================================
+@Parcelize
+data class Car(
+    val id: String,
+    val name: String,
+    val brand: String,
+    val dailyRate: Double,
+    val category: String,
+    val description: String? = null // Campo opcional (null safety)
+) : Parcelable
+
+object CarMock {
+    val cars = listOf(
+        Car("1", "Uno 1.0", "Fiat", 90.0, "Econômico", "Carro compacto, perfeito para a cidade."),
+        Car("2", "HB20 1.6", "Hyundai", 130.0, "Hatch Intermediário", "Excelente conforto e ar-condicionado."),
+        Car("3", "Compass 2.0", "Jeep", 250.0, "SUV Premium", null) // Exemplo opcional nulo
+    )
+}
+
+// ==========================================
+// 2. COMPONENTE XML REUTILIZÁVEL CUSTOMIZADO
+// ==========================================
+class InsuranceOptionView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : LinearLayout(context, attrs, defStyleAttr) {
+
+    private val binding: ViewInsuranceOptionBinding = ViewInsuranceOptionBinding.inflate(
+        LayoutInflater.from(context), this, true
+    )
+
+    fun setup(title: String, priceText: String, onCheckedChange: (Boolean) -> Unit) {
+        binding.tvInsuranceTitle.text = title
+        binding.tvInsuranceSubtitle.text = priceText
+        binding.cbInsurance.setOnCheckedChangeListener { _, isChecked ->
+            onCheckedChange(isChecked)
+        }
+    }
+
+    fun isInsuranceSelected(): Boolean = binding.cbInsurance.isChecked
+}
+
+// ==========================================
+// 3. RECYCLERVIEW ADAPTER
+// ==========================================
+class CarAdapter(
+    private val cars: List<Car>,
+    private val onCarClick: (Car) -> Unit
+) : RecyclerView.Adapter<CarAdapter.CarViewHolder>() {
+
+    class CarViewHolder(val binding: ItemCarBinding) : RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CarViewHolder {
+        val binding = ItemCarBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return CarViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: CarViewHolder, position: Int) {
+        val car = cars[position]
+        with(holder.binding) {
+            tvCarName.text = "${car.brand} ${car.name}"
+            tvCarCategory.text = car.category
+            tvCarRate.text = "R$ %.2f / dia".format(car.dailyRate)
+            root.setOnClickListener { onCarClick(car) }
+        }
+    }
+
+    override fun getItemCount(): Int = cars.size
+}
+
+// ==========================================
+// 4. TELA 1: MAIN ACTIVITY (Host do Fragment)
+// ==========================================
+class MainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityMainBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, CarListFragment())
+                .commit()
+        }
+    }
+}
+
+// ==========================================
+// 5. TELA 1: FRAGMENT (Lista com RecyclerView)
+// ==========================================
+class CarListFragment : Fragment() {
+    private var _binding: FragmentCarListBinding? = null
+    private val binding get() = _binding!!
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        _binding = FragmentCarListBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: View?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        binding.rvCars.layoutManager = LinearLayoutManager(requireContext())
+        binding.rvCars.adapter = CarAdapter(CarMock.cars) { car ->
+            // Navegação por Intent Explícita com passagem de dados
+            val intent = Intent(requireContext(), CarDetailActivity::class.java).apply {
+                putExtra(CarDetailActivity.EXTRA_CAR, car)
+            }
+            startActivity(intent)
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
+    }
+}
+
+// ==========================================
+// 6. TELA 2: CAR DETAIL ACTIVITY (Detalhes)
+// ==========================================
+class CarDetailActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_CAR = "extra_car"
+        private const val INSURANCE_PRICE = 40.0
+    }
+
+    private lateinit var binding: ActivityCarDetailBinding
+    private var car: Car? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityCarDetailBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        car = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_CAR, Car::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(EXTRA_CAR)
+        }
+
+        setupUI()
+    }
+
+    private fun setupUI() {
+        val currentCar = car ?: return
+
+        binding.tvDetailTitle.text = "${currentCar.brand} ${currentCar.name}"
+        binding.tvDetailCategory.text = "Categoria: ${currentCar.category}"
+        binding.tvDetailDescription.text = currentCar.description ?: "Sem descrição disponível para este veículo."
+
+        // Interação que atualiza a UI
+        binding.insuranceOption.setup(
+            title = "Seguro Proteção Total",
+            priceText = "+ R$ %.2f / dia".format(INSURANCE_PRICE)
+        ) { isChecked ->
+            updateTotalPrice(currentCar.dailyRate, isChecked)
+        }
+
+        updateTotalPrice(currentCar.dailyRate, binding.insuranceOption.isInsuranceSelected())
+
+        binding.btnConfirm.setOnClickListener {
+            Toast.makeText(this, "Reserva confirmada para ${currentCar.name}!", Toast.LENGTH_SHORT).show()
+            finish()
+        }
+    }
+
+    private fun updateTotalPrice(basePrice: Double, hasInsurance: Boolean) {
+        val total = if (hasInsurance) basePrice + INSURANCE_PRICE else basePrice
+        binding.tvTotalRate.text = "Total: R$ %.2f / dia".format(total)
+    }
+}
